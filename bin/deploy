@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+cd $BIN_DIR
+cd ..
+
+PROJECT_NAME=${PWD##*/}
+
+USER_ENVVARS="$HOME/$PROJECT_NAME.envvars"
+
+if [ -f $USER_ENVVARS ];
+then
+    source $USER_ENVVARS
+fi
+: ${DEFAULT_ENVVARS:="./envvars"}
+if [ -f $DEFAULT_ENVVARS ];
+then
+    source $DEFAULT_ENVVARS
+fi
+
+: ${VARNISH_CONTROL_KEY:=$1}
+
+BUILD_BRANCH=${2:-$DEFAULT_BUILD_BRANCH}
+
+echo "Building ${PROJECT_NAME} : ${BUILD_BRANCH}"
+git fetch --all
+git checkout ${BUILD_BRANCH}
+git pull
+ant build

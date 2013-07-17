@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="piwik.shrikeh.net" default="build" basedir=".">
+    <taskdef resource="net/sf/antcontrib/antlib.xml" />
+    <target name="init">
+        <property environment="env"/>
+        <condition property="build.env" value="${env.APPLICATION_ENV}" else="dev">
+            <isset property="env.APPLICATION_ENV" />
+        </condition>
+        <property name="build.name" value="${ant.project.name}.${build.env}" />
+        <property file="${basedir}/build.properties"/>
+        <property file="${basevars}" />
+
+        <!-- Use a timestamp to avoid collisions between builds of the same project -->
+        <tstamp>
+            <format property="build.properties.time" pattern="yyyyMMdd_HHmmss" />
+        </tstamp>
+        <property name="build.properties.filter" location="${build.properties.tmp}-${build.properties.time}" />
+        <echoproperties destfile="${build.properties.filter}"/>
+        <echo message="Expanded properties put into ${build.properties.filter}" level="verbose"/>
+
+        <echo message="Project: ${ant.project.name}" />
+        <echo message="Environment: ${build.env}"/>
+        <echo message="Hudson build ID: ${env.BUILD_ID}"/>
+        <echo message="Hudson build number: ${env.BUILD_NUMBER}"/>
+        <echo message="git revision: ${env.GIT_REVISION}"/>
+        <tstamp>
+            <format property="build.datetime" pattern="dd-MMM-yy HH:mm:ss"/>
+        </tstamp>
+        <echo message="Build started at ${build.datetime}"/>
+    </target>
+
+    <target name="php-fpm.addenv" if="php-fpm.pool">
+        <propertycopy name="php-fpm.var" from="php-fpm.env.${app.var}" />
+        <if>
+            <and>
+                <isset property="php-fpm.var" />
+            <not>
+                <equals arg1="${php-fpm.var}" arg2="" />
+            </not>
+            </and>
+            <then>
+                <echo append="true" file="${php-fpm.pool}"
+                    message="env[${app.var}] = &quot;${php-fpm.var}&quot;;${line.separator}"
+                />
+            </then>
+        </if>
+    </target>
+
+    <target name="php-fpm" if="env.FPM_POOLDIR">
+        <echo message="Copying ${php-fpm.dist} to ${php-fpm.pool}" level="verbose" />
+        <dirname property="php-fpm.pool.dir" file="${php-fpm.pool}" />
+        <mkdir dir="${php-fpm.pool.dir}" />
+        <copy file="${php-fpm.dist}" tofile="${php-fpm.pool}" overwrite="true" filtering="true">
+            <filterset filtersfile="${build.properties.filter}"/>
+        </copy>
+        <propertyselector property="php-fpm.env"
+            delimiter=","
+            match="^php-fpm\.env\.(.*)"
+            select="\1"
+            casesensitive="false"
+            distinct="true"
+        />
+
+            <foreach list="${php-fpm.env}"
+                delimiter=","
+                target="php-fpm.addenv"
+                param="app.var"
+                inheritall="true"
+            />
+        <chmod file="${php-fpm.pool}" perm="640" />
+    </target>
+
+    <target name="nginx" if="nginx.vhost">
+        <echo message="Copying ${nginx.dist} to ${nginx.vhost}" level="verbose" />
+        <dirname property="nginx.vhost.dir" file="${nginx.vhost}" />
+        <mkdir dir="${nginx.vhost.dir}" />
+        <copy file="${nginx.dist}" tofile="${nginx.vhost}" overwrite="true" filtering="true">
+            <filterset filtersfile="${build.properties.filter}"/>
+        </copy>
+        <mkdir dir="${nginx.log.access.dir}" />
+        <mkdir dir="${nginx.log.error.dir}" />
+        <chmod file="${nginx.vhost}" perm="${nginx.vhost.file.perms}" />
+    </target>
+
+    <target name="apache" if="apache.vhost">
+        <echo message="Copying ${apache.dist} to ${apache.vhost}" level="verbose" />
+        <dirname property="apache.vhost.dir" file="${apache.vhost}" />
+        <mkdir dir="${apache.vhost.dir}" />
+        <copy file="${apache.dist}" tofile="${apache.vhost}" overwrite="true" filtering="true">
+            <filterset filtersfile="${build.properties.filter}"/>
+        </copy>
+        <chmod file="${apache.vhost}" perm="640" />
+    </target>
+
+    <target name="app" if="app.config">
+
+    </target>
+
+    <target name="build-parallel" if="env.BUILD_PARALLEL">
+        <parallel threadCount="${env.BUILD_THREADCOUNT}">
+            <antcall target="nginx" />
+            <antcall target="apache" />
+            <antcall target="php-fpm" />
+            <antcall target="app" />
+        </parallel>
+    </target>
+
+    <target name="build-serial" unless="build.parallel">
+        <antcall target="nginx" />
+        <antcall target="apache" />
+        <antcall target="php-fpm" />
+        <antcall target="app" />
+    </target>
+
+    <target name="build" depends="init, build-parallel, build-serial" />
+</project>
+
